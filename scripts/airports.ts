@@ -8,7 +8,8 @@ import type { Airport, ManifestEntry } from '../src/types/track'
 const OURAIRPORTS_BASE = 'https://davidmegginson.github.io/ourairports-data/'
 const CACHE_MAX_AGE_MS = 28 * 24 * 60 * 60 * 1000 // one AIRAC cycle
 
-interface AirportInfo {
+export interface AirportInfo {
+  ident: string // ICAO / GPS code, e.g. "KRDU" (joins to runways.csv)
   name: string
   lat: number
   lon: number
@@ -18,7 +19,7 @@ interface AirportInfo {
 }
 
 /** Quote-aware parse of a single CSV line (handles commas and "" inside quoted fields). */
-function parseCsvLine(line: string): string[] {
+export function parseCsvLine(line: string): string[] {
   const out: string[] = []
   let cur = ''
   let inQuotes = false
@@ -43,7 +44,7 @@ function parseCsvLine(line: string): string[] {
 
 /** Fetches an OurAirports CSV by filename, caching it under data/cache and only re-downloading
  * when the cached copy is older than one AIRAC cycle. Falls back to a stale cache on network error. */
-async function ensureCsv(root: string, file: string): Promise<string | null> {
+export async function ensureCsv(root: string, file: string): Promise<string | null> {
   const cacheDir = path.join(root, 'data', 'cache')
   const cacheFile = path.join(cacheDir, `ourairports-${file}`)
   mkdirSync(cacheDir, { recursive: true })
@@ -65,10 +66,11 @@ async function ensureCsv(root: string, file: string): Promise<string | null> {
 }
 
 /** Builds an IATA-code -> airport-info lookup from the OurAirports airports CSV. */
-function parseAirports(csv: string): Map<string, AirportInfo> {
+export function parseAirports(csv: string): Map<string, AirportInfo> {
   const lines = csv.split(/\r?\n/)
   const header = parseCsvLine(lines[0])
   const idx = {
+    ident: header.indexOf('ident'),
     name: header.indexOf('name'),
     lat: header.indexOf('latitude_deg'),
     lon: header.indexOf('longitude_deg'),
@@ -88,6 +90,7 @@ function parseAirports(csv: string): Map<string, AirportInfo> {
     if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue
     if (!map.has(iata)) {
       map.set(iata, {
+        ident: (cols[idx.ident] ?? '').trim(),
         name: cols[idx.name] ?? iata,
         lat,
         lon,
@@ -127,10 +130,16 @@ function safeTz(lat: number, lon: number): string | null {
 
 /**
  * Rebuilds `public/data/airports.json` to contain exactly the airports referenced (as origin or
- * destination) by the current manifest, with coordinates from OurAirports and an IANA timezone
- * derived from those coordinates. Returns the number of airports written.
+ * destination) by the current manifest, with coordinates, timezone, location, and the list of
+ * runway-end identifiers (for manual runway selection). The caller supplies the already-parsed
+ * airport lookup and a map of ICAO ident -> runway-end idents. Returns the number written.
  */
-export async function writeAirportsFile(root: string, manifest: ManifestEntry[]): Promise<number> {
+export async function writeAirportsFile(
+  root: string,
+  manifest: ManifestEntry[],
+  lookup: Map<string, AirportInfo>,
+  runwayIdents: Map<string, string[]>,
+): Promise<number> {
   const outPath = path.join(root, 'public', 'data', 'airports.json')
 
   const codes = new Set<string>()
@@ -143,14 +152,6 @@ export async function writeAirportsFile(root: string, manifest: ManifestEntry[])
     return 0
   }
 
-  const csv = await ensureCsv(root, 'airports.csv')
-  if (!csv) {
-    console.warn('OurAirports data unavailable (no network and no cache) — skipping airport pins.')
-    if (!existsSync(outPath)) writeFileSync(outPath, '[]')
-    return 0
-  }
-
-  const lookup = parseAirports(csv)
   const regionsCsv = await ensureCsv(root, 'regions.csv')
   const regions = regionsCsv ? parseRegions(regionsCsv) : new Map<string, string>()
 
@@ -167,6 +168,7 @@ export async function writeAirportsFile(root: string, manifest: ManifestEntry[])
       country: info.country,
       municipality: info.municipality,
       region: (info.region && regions.get(info.region)) || info.region,
+      runways: runwayIdents.get(info.ident) ?? [],
     })
   }
 

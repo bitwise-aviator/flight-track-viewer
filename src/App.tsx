@@ -7,6 +7,7 @@ import { ImportPanel } from './components/ImportPanel'
 import { TimeSlider } from './components/TimeSlider'
 import { LayerToggle } from './components/LayerToggle'
 import { TailHistory } from './components/TailHistory'
+import { RunwayStats } from './components/RunwayStats'
 import type { TrackFeature } from './types/track'
 
 // Cesium and MapLibre/deck.gl are each sizeable; only the active view's code should load.
@@ -80,6 +81,7 @@ function App() {
         <>
           <div className="app__body">
             <aside className="app__sidebar">
+              <RunwayStats />
               <FlightList />
               <ImportPanel />
               <p className="app__attribution">

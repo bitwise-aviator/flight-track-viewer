@@ -16,7 +16,22 @@ export interface ManifestEntry {
   pointCount: number
   /** The KML filename in data/raw this track was ingested from. Used to skip re-imports. */
   sourceFile: string
+  /** Detected (or manually set) departure runway end, e.g. "23R". */
+  departureRunway: string | null
+  departureRunwayStatus: RunwayStatus
+  /** Detected (or manually set) arrival runway end. */
+  arrivalRunway: string | null
+  arrivalRunwayStatus: RunwayStatus
 }
+
+/**
+ * How a flight's runway was determined:
+ * - `auto`: confidently detected from the track
+ * - `uncertain`: detected but questionable (e.g. parallel runways) — worth confirming
+ * - `manual`: set by the user
+ * - `unknown`: could not be determined (e.g. track began airborne) — needs manual entry
+ */
+export type RunwayStatus = 'auto' | 'uncertain' | 'manual' | 'unknown'
 
 /** One airport referenced by at least one track's origin/destination. */
 export interface Airport {
@@ -33,6 +48,8 @@ export interface Airport {
   municipality: string | null
   /** Region/province name (resolved from OurAirports regions), e.g. "North Carolina". */
   region: string | null
+  /** Runway-end identifiers at this airport (for manual runway selection), e.g. ["05L","23R",…]. */
+  runways: string[]
 }
 
 export type SkipReason = 'already-imported' | 'no-track' | 'duplicate-id'

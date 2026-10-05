@@ -44,6 +44,8 @@ interface VizState {
   clearSelection: () => void
   /** Deletes a flight via the dev endpoint, then refreshes the dataset. */
   deleteFlight: (id: string) => Promise<void>
+  /** Sets (or clears, with null) a flight's departure/arrival runway via the dev endpoint. */
+  setRunway: (id: string, direction: 'departure' | 'arrival', value: string | null) => Promise<void>
   setTimeCursor: (t: number) => void
   setTimeRange: (range: [number, number] | null) => void
   play: () => void
@@ -158,6 +160,13 @@ export const useVizStore = create<VizState>((set, get) => ({
     await get().loadManifest()
     await get().loadAirports()
     await get().selectAll()
+  },
+  setRunway: async (id, direction, value) => {
+    const url = `/api/runway?id=${encodeURIComponent(id)}&dir=${direction}&value=${encodeURIComponent(value ?? '')}`
+    const res = await fetch(url, { method: 'POST' })
+    const data = (await res.json()) as { ok: boolean; error?: string }
+    if (!res.ok || !data.ok) throw new Error(data.error ?? `Failed to set runway (HTTP ${res.status})`)
+    await get().loadManifest()
   },
   setTimeCursor: (t) => set({ timeCursor: t }),
   setTimeRange: (range) => set({ timeRange: range }),

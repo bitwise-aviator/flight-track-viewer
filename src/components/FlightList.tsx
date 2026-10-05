@@ -96,6 +96,14 @@ export function FlightList() {
                   ? 'flight-row__label--dep'
                   : 'flight-row__label--arr'
                 : ''
+              const depFlag = entry.departureRunwayStatus === 'uncertain' || entry.departureRunwayStatus === 'unknown'
+              const arrFlag = entry.arrivalRunwayStatus === 'uncertain' || entry.arrivalRunwayStatus === 'unknown'
+              const cautionTitle = [
+                depFlag ? `Departure runway ${entry.departureRunwayStatus}` : null,
+                arrFlag ? `Arrival runway ${entry.arrivalRunwayStatus}` : null,
+              ]
+                .filter(Boolean)
+                .join(' · ')
               return (
                 <li
                   key={entry.id}
@@ -108,6 +116,17 @@ export function FlightList() {
                       checked={selected.has(entry.id)}
                       onChange={() => handleToggleHeatmap(entry)}
                     />
+                    {(depFlag || arrFlag) && (
+                      <button
+                        type="button"
+                        className="flight-row__caution"
+                        title={`${cautionTitle} — click to review / set manually`}
+                        aria-label={`${cautionTitle}. Open flight to set runway manually.`}
+                        onClick={() => focusFlight(entry.id)}
+                      >
+                        ⚠
+                      </button>
+                    )}
                     <button
                       type="button"
                       className={`flight-row__label ${dirClass}`}

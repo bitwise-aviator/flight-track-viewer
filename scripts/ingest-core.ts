@@ -1,8 +1,39 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { DOMParser } from '@xmldom/xmldom'
-import type { IngestSummary, ManifestEntry, TrackFeature } from '../src/types/track'
-import { writeAirportsFile } from './airports'
+import type { IngestSummary, ManifestEntry, RunwayStatus, TrackFeature } from '../src/types/track'
+import { ensureCsv, parseAirports, writeAirportsFile, type AirportInfo } from './airports'
+import {
+  detectArrivalRunway,
+  detectDepartureRunway,
+  loadRunways,
+  runwayIdentsByIcao,
+  type DetectPoint,
+  type Runway,
+} from './runways'
+
+/** Preloaded reference data for runway detection, shared across all tracks in one ingest run. */
+interface RunwayContext {
+  airportLookup: Map<string, AirportInfo>
+  runwaysByIcao: Map<string, Runway[]>
+}
+
+/** Per-flight manual runway overrides, persisted so they survive a full re-ingest. */
+type RunwayOverrides = Record<string, { departure?: string | null; arrival?: string | null }>
+
+function overridesPath(root: string): string {
+  return path.join(root, 'data', 'runway-overrides.json')
+}
+
+function loadOverrides(root: string): RunwayOverrides {
+  const p = overridesPath(root)
+  if (!existsSync(p)) return {}
+  try {
+    return JSON.parse(readFileSync(p, 'utf-8')) as RunwayOverrides
+  } catch {
+    return {}
+  }
+}
 
 /** Above this many points, a track is decimated for browser performance. */
 const MAX_POINTS = 1500
@@ -20,6 +51,9 @@ interface XmlNode {
 interface TimedPoint {
   coord: [number, number, number]
   time: string
+  /** Ground speed (knots) and track heading (deg) from the point's description, when present. */
+  spd: number | null
+  hdg: number | null
 }
 
 function elementsByTag(parent: XmlNode, tag: string): XmlNode[] {
@@ -69,6 +103,18 @@ function normalizePoints(points: TimedPoint[]): TimedPoint[] {
  *    folder's colored LineString segments carry no timestamps and are ignored.
  *  - Older / gx flavor: a single <gx:Track> with interleaved <when> and <gx:coord> children.
  */
+/** Parses the per-point "Speed: N kt" from an FR24 Point placemark description. */
+function parseSpeedKt(desc: string): number | null {
+  const m = desc.match(/Speed:<\/b><\/span>\s*<span>\s*([\d,]+)/i)
+  return m ? Number(m[1].replace(/,/g, '')) : null
+}
+
+/** Parses the per-point "Heading: N" from an FR24 Point placemark description. */
+function parseHeadingDeg(desc: string): number | null {
+  const m = desc.match(/Heading:<\/b><\/span>\s*<span>\s*([\d]+)/i)
+  return m ? Number(m[1]) : null
+}
+
 function extractPoints(doc: XmlNode): TimedPoint[] {
   const gxTracks = elementsByTag(doc, 'gx:Track')
   if (gxTracks.length > 0) {
@@ -80,7 +126,8 @@ function extractPoints(doc: XmlNode): TimedPoint[] {
       for (let i = 0; i < n; i++) {
         const [lon, lat, alt] = textOf(coords[i]).split(/\s+/).map(Number)
         if (Number.isFinite(lon) && Number.isFinite(lat)) {
-          pts.push({ coord: [lon, lat, alt || 0], time: textOf(whens[i]) })
+          // gx:Track has no per-point speed/heading; derived from motion during detection.
+          pts.push({ coord: [lon, lat, alt || 0], time: textOf(whens[i]), spd: null, hdg: null })
         }
       }
     }
@@ -96,7 +143,13 @@ function extractPoints(doc: XmlNode): TimedPoint[] {
     if (!coordsEl) continue
     const [lon, lat, alt] = textOf(coordsEl).split(',').map(Number)
     if (Number.isFinite(lon) && Number.isFinite(lat)) {
-      pts.push({ coord: [lon, lat, alt || 0], time: textOf(when) })
+      const desc = textOf(firstByTag(placemark, 'description'))
+      pts.push({
+        coord: [lon, lat, alt || 0],
+        time: textOf(when),
+        spd: parseSpeedKt(desc),
+        hdg: parseHeadingDeg(desc),
+      })
     }
   }
   return normalizePoints(pts)
@@ -180,16 +233,45 @@ function extractMeta(doc: XmlNode, fileName: string) {
 }
 
 /** Parses one KML file into a track + manifest entry, or null if it has no usable track. */
-function parseFile(filePath: string, fileName: string): { manifest: ManifestEntry; track: TrackFeature } | null {
+function parseFile(
+  filePath: string,
+  fileName: string,
+  ctx?: RunwayContext,
+): { manifest: ManifestEntry; track: TrackFeature } | null {
   const xml = readFileSync(filePath, 'utf-8')
   const doc = new DOMParser().parseFromString(xml, 'text/xml') as unknown as XmlNode
 
   const points = extractPoints(doc)
   if (points.length < 2) return null
 
+  const meta = extractMeta(doc, fileName)
+
+  // Runway detection runs on the original (non-unwrapped) coordinates, so positions still match
+  // the airport's runway geometry even for anti-meridian-crossing flights.
+  let departureRunway: string | null = null
+  let departureRunwayStatus: RunwayStatus = 'unknown'
+  let arrivalRunway: string | null = null
+  let arrivalRunwayStatus: RunwayStatus = 'unknown'
+  if (ctx) {
+    const detectPts: DetectPoint[] = points.map((p) => ({
+      lat: p.coord[1],
+      lon: p.coord[0],
+      spd: p.spd,
+      hdg: p.hdg,
+      t: Date.parse(p.time),
+    }))
+    const originIcao = meta.origin ? ctx.airportLookup.get(meta.origin)?.ident : undefined
+    const destIcao = meta.destination ? ctx.airportLookup.get(meta.destination)?.ident : undefined
+    const dep = detectDepartureRunway(detectPts, originIcao ? ctx.runwaysByIcao.get(originIcao) : undefined)
+    const arr = detectArrivalRunway(detectPts, destIcao ? ctx.runwaysByIcao.get(destIcao) : undefined)
+    departureRunway = dep.runway
+    departureRunwayStatus = dep.status
+    arrivalRunway = arr.runway
+    arrivalRunwayStatus = arr.status
+  }
+
   unwrapAntimeridian(points)
   const decimated = decimate(points, MAX_POINTS)
-  const meta = extractMeta(doc, fileName)
   const departureTime = points[0].time
   const arrivalTime = points[points.length - 1].time
   const id = slugify(`${meta.callsign}-${departureTime}`)
@@ -223,9 +305,29 @@ function parseFile(filePath: string, fileName: string): { manifest: ManifestEntr
     bbox,
     pointCount: decimated.length,
     sourceFile: fileName,
+    departureRunway,
+    departureRunwayStatus,
+    arrivalRunway,
+    arrivalRunwayStatus,
   }
 
   return { manifest, track }
+}
+
+/** Applies manual runway overrides onto the manifest (override wins, marked `manual`). */
+function applyOverrides(manifest: ManifestEntry[], overrides: RunwayOverrides): void {
+  for (const entry of manifest) {
+    const o = overrides[entry.id]
+    if (!o) continue
+    if (o.departure != null) {
+      entry.departureRunway = o.departure
+      entry.departureRunwayStatus = 'manual'
+    }
+    if (o.arrival != null) {
+      entry.arrivalRunway = o.arrival
+      entry.arrivalRunwayStatus = 'manual'
+    }
+  }
 }
 
 export interface IngestOptions {
@@ -273,6 +375,12 @@ export async function ingestNewTracks(root: string, options: IngestOptions = {})
 
   if (!existsSync(rawDir)) return summary
 
+  // Load reference data once for runway detection + the airports file.
+  const airportsCsv = await ensureCsv(root, 'airports.csv')
+  const airportLookup = airportsCsv ? parseAirports(airportsCsv) : new Map<string, AirportInfo>()
+  const runwaysByIcao = await loadRunways(root)
+  const ctx: RunwayContext = { airportLookup, runwaysByIcao }
+
   const kmlFiles = readdirSync(rawDir)
     .filter((f) => f.toLowerCase().endsWith('.kml'))
     .sort()
@@ -286,7 +394,7 @@ export async function ingestNewTracks(root: string, options: IngestOptions = {})
 
     let parsed: { manifest: ManifestEntry; track: TrackFeature } | null
     try {
-      parsed = parseFile(path.join(rawDir, file), file)
+      parsed = parseFile(path.join(rawDir, file), file, ctx)
     } catch (e) {
       summary.failed.push({ sourceFile: file, error: e instanceof Error ? e.message : String(e) })
       continue
@@ -314,10 +422,11 @@ export async function ingestNewTracks(root: string, options: IngestOptions = {})
     })
   }
 
+  applyOverrides(manifest, loadOverrides(root))
   manifest.sort((a, b) => a.date.localeCompare(b.date))
   writeFileSync(manifestPath, JSON.stringify(manifest, null, 2))
   summary.manifestCount = manifest.length
-  summary.airportsCount = await writeAirportsFile(root, manifest)
+  summary.airportsCount = await writeAirportsFile(root, manifest, airportLookup, runwayIdentsByIcao(runwaysByIcao))
   return summary
 }
 
@@ -361,6 +470,54 @@ export async function deleteTrack(root: string, id: string): Promise<DeleteResul
 
   manifest = manifest.filter((m) => m.id !== id)
   writeFileSync(manifestPath, JSON.stringify(manifest, null, 2))
-  await writeAirportsFile(root, manifest)
+
+  const airportsCsv = await ensureCsv(root, 'airports.csv')
+  const airportLookup = airportsCsv ? parseAirports(airportsCsv) : new Map<string, AirportInfo>()
+  const runwaysByIcao = await loadRunways(root)
+  await writeAirportsFile(root, manifest, airportLookup, runwayIdentsByIcao(runwaysByIcao))
+  return { ok: true }
+}
+
+/**
+ * Sets (or clears) a manual runway for a flight. The override is persisted to
+ * data/runway-overrides.json (so it survives a full re-ingest) and applied to the manifest
+ * immediately. Pass an empty value to clear the override.
+ */
+export function setRunwayOverride(
+  root: string,
+  id: string,
+  direction: 'departure' | 'arrival',
+  value: string | null,
+): DeleteResult {
+  const manifestPath = path.join(root, 'public', 'data', 'manifest.json')
+  if (!existsSync(manifestPath)) return { ok: false, error: 'No manifest found' }
+
+  let manifest: ManifestEntry[]
+  try {
+    manifest = JSON.parse(readFileSync(manifestPath, 'utf-8')) as ManifestEntry[]
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) }
+  }
+  const entry = manifest.find((m) => m.id === id)
+  if (!entry) return { ok: false, error: `Flight "${id}" not found` }
+
+  const overrides = loadOverrides(root)
+  const clean = value && value.trim() ? value.trim().toUpperCase() : null
+
+  const current = overrides[id] ?? {}
+  if (clean) current[direction] = clean
+  else delete current[direction]
+  if (Object.keys(current).length) overrides[id] = current
+  else delete overrides[id]
+  writeFileSync(overridesPath(root), JSON.stringify(overrides, null, 2))
+
+  if (direction === 'departure') {
+    entry.departureRunway = clean
+    entry.departureRunwayStatus = clean ? 'manual' : 'unknown'
+  } else {
+    entry.arrivalRunway = clean
+    entry.arrivalRunwayStatus = clean ? 'manual' : 'unknown'
+  }
+  writeFileSync(manifestPath, JSON.stringify(manifest, null, 2))
   return { ok: true }
 }

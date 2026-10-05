@@ -274,6 +274,132 @@
   color: #8a93a5;
 }
 
+.leg__runway {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 5px;
+  font-size: 12px;
+}
+
+.leg__runway-key {
+  color: #6b6375;
+}
+
+.leg__runway-select {
+  background: #16171d;
+  color: #e5e4e7;
+  border: 1px solid #3a3c48;
+  border-radius: 5px;
+  padding: 2px 6px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.leg__runway-value {
+  font-weight: 700;
+  color: #e5e4e7;
+}
+
+.leg__runway-change {
+  background: none;
+  border: none;
+  color: #6b86ff;
+  font-size: 11px;
+  text-decoration: underline;
+  cursor: pointer;
+  padding: 0;
+}
+
+.leg__runway-confirm {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: 1px solid rgba(130, 255, 130, 0.5);
+  border-radius: 4px;
+  background: rgba(130, 255, 130, 0.12);
+  color: #82ff82;
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.leg__runway-confirm:hover {
+  background: rgba(130, 255, 130, 0.22);
+}
+
+.leg__runway-confirm:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.leg__runway-status {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.rwy-status--auto {
+  color: #8a93a5;
+}
+.rwy-status--manual {
+  color: #c084fc;
+}
+.rwy-status--uncertain {
+  color: #ffcf5c;
+}
+.rwy-status--uncertain.leg__runway-select {
+  border-color: rgba(255, 207, 92, 0.6);
+}
+.rwy-status--unknown {
+  color: #ff8f5c;
+}
+.rwy-status--unknown.leg__runway-select {
+  border-color: rgba(255, 143, 92, 0.6);
+}
+
+/* ===== Runway usage (airport selected) ===== */
+.runway-stats {
+  margin-bottom: 16px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid #2e303a;
+}
+
+.runway-stats__heading {
+  font-size: 13px;
+  font-weight: 700;
+  color: #ff7ae0;
+  margin: 0 0 10px;
+}
+
+.runway-pie {
+  margin-bottom: 12px;
+}
+
+.runway-pie__title {
+  font-size: 12px;
+  margin: 0 0 6px;
+  color: #c7cad2;
+}
+
+.runway-pie__total {
+  color: #6b6375;
+  font-weight: 400;
+}
+
+.runway-pie__empty {
+  font-size: 12px;
+  color: #6b6375;
+  margin: 0;
+}
+
+.runway-pie__canvas {
+  height: 140px;
+  position: relative;
+}
+
 .flight-list h2 {
   font-size: 14px;
   margin: 0 0 8px;
@@ -322,6 +448,17 @@
 
 .flight-row input[type='checkbox'] {
   flex-shrink: 0;
+  cursor: pointer;
+}
+
+.flight-row__caution {
+  flex-shrink: 0;
+  font-size: 12px;
+  line-height: 1;
+  color: #ffcf5c;
+  background: none;
+  border: none;
+  padding: 0;
   cursor: pointer;
 }
 

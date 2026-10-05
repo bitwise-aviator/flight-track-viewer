@@ -17,9 +17,10 @@ dist-ssr
 data/cache/
 
 # Personal flight data — raw KML exports and everything derived from them (manifests, per-flight
-# GeoJSON, airport list). Regenerated locally with `npm run ingest`; never committed.
+# GeoJSON, airport list, manual runway overrides). Regenerated locally with `npm run ingest`.
 /data/raw/*
 !/data/raw/.gitkeep
+/data/runway-overrides.json
 /public/data/*
 !/public/data/.gitkeep
 
