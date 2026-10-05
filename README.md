@@ -32,6 +32,11 @@ dropping in KML files, re-running the ingest script, committing, and redeploying
 - Aircraft registration → country of registry is resolved from the ICAO nationality-mark prefixes
   ([src/lib/registrationCountry.ts](src/lib/registrationCountry.ts)), with the shared "B" prefix
   disambiguated between China, Taiwan, Hong Kong, and Macau.
+- FIR (Flight Information Region) boundaries: the **[VATSpy Data
+  Project](https://github.com/vatsimnetwork/vatspy-data-project)** (`Boundaries.geojson` +
+  `VATSpy.dat`), fetched and cached at ingest. These are VATSIM's airspace boundaries — a close,
+  freely-available approximation of real-world FIRs with ICAO-style codes and names. The merged
+  result is written to `public/fir-boundaries.geojson` (committed, generic reference data).
 
 ## Setup
 

@@ -22,6 +22,14 @@ export interface ManifestEntry {
   /** Detected (or manually set) arrival runway end. */
   arrivalRunway: string | null
   arrivalRunwayStatus: RunwayStatus
+  /** Flight Information Regions overflown, in chronological order. */
+  firs: FirRef[]
+}
+
+/** A Flight Information Region: 4-letter ICAO-style code + name. */
+export interface FirRef {
+  code: string
+  name: string
 }
 
 /**

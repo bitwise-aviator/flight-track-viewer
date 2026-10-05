@@ -45,18 +45,20 @@ export function FlightList() {
   const selectedAirport = useVizStore((s) => s.selectedAirport)
   const loadManifest = useVizStore((s) => s.loadManifest)
   const loadAirports = useVizStore((s) => s.loadAirports)
+  const loadFirBoundaries = useVizStore((s) => s.loadFirBoundaries)
   const loadTrack = useVizStore((s) => s.loadTrack)
   const selectAll = useVizStore((s) => s.selectAll)
   const toggleSelected = useVizStore((s) => s.toggleSelected)
   const focusFlight = useVizStore((s) => s.focusFlight)
 
-  // On startup: load airports (for pins + local dates), the manifest, then toggle every flight on.
+  // On startup: load airports (for pins + local dates), FIR boundaries, the manifest, then select all.
   useEffect(() => {
     loadAirports().catch((err: unknown) => console.error('Failed to load airports', err))
+    loadFirBoundaries().catch((err: unknown) => console.error('Failed to load FIR boundaries', err))
     loadManifest()
       .then(() => selectAll())
       .catch((err: unknown) => console.error('Failed to load flights', err))
-  }, [loadManifest, loadAirports, selectAll])
+  }, [loadManifest, loadAirports, loadFirBoundaries, selectAll])
 
   const airportByCode = useMemo(() => new Map<string, Airport>(airports.map((a) => [a.code, a])), [airports])
 

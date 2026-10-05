@@ -192,6 +192,20 @@ export function FlightDetails({ entry }: { entry: ManifestEntry }) {
         onSetRunway={(v) => setRunway(entry.id, 'arrival', v)}
       />
 
+      {entry.firs.length > 0 && (
+        <div className="firs">
+          <div className="firs__label">FIRs overflown ({entry.firs.length})</div>
+          <ol className="firs__list">
+            {entry.firs.map((f, i) => (
+              <li key={`${f.code}-${i}`}>
+                <span className="firs__code">{f.code}</span>
+                <span className="firs__name">{f.name}</span>
+              </li>
+            ))}
+          </ol>
+        </div>
+      )}
+
       <button type="button" className="flight-details__delete" onClick={() => setConfirming(true)}>
         Delete flight
       </button>

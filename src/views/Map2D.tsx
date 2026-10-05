@@ -3,8 +3,9 @@ import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { MapboxOverlay } from '@deck.gl/mapbox'
 import { HeatmapLayer } from '@deck.gl/aggregation-layers'
-import { IconLayer, PathLayer, TextLayer } from '@deck.gl/layers'
+import { GeoJsonLayer, IconLayer, PathLayer, TextLayer } from '@deck.gl/layers'
 import type { Layer } from '@deck.gl/core'
+import type { Feature } from 'geojson'
 import { useVizStore } from '../state/vizStore'
 import { maplibreStyles } from '../lib/maplibreStyles'
 import { buildHeatmapPoints, type HeatPoint } from '../heatmap/buildHeatmap'
@@ -54,6 +55,7 @@ export function Map2D() {
   const tracks = useVizStore((s) => s.tracks)
   const selectedIds = useVizStore((s) => s.selectedIds)
   const airports = useVizStore((s) => s.airports)
+  const firBoundaries = useVizStore((s) => s.firBoundaries)
   const focusedId = useVizStore((s) => s.focusedId)
   const selectedAirport = useVizStore((s) => s.selectedAirport)
   const basemapMode = useVizStore((s) => s.basemapMode)
@@ -130,6 +132,43 @@ export function Map2D() {
     const selectedTracks = selectedIds.map((id) => tracks[id]).filter((t): t is TrackFeature => Boolean(t))
     const focusedTrack = focusedId ? tracks[focusedId] : undefined
     const layers: Layer[] = []
+
+    // FIR boundaries as a subtle reference layer underneath everything else.
+    if (firBoundaries) {
+      layers.push(
+        new GeoJsonLayer({
+          id: 'fir-boundaries',
+          data: firBoundaries,
+          stroked: true,
+          filled: false,
+          getLineColor: [150, 170, 205, 70],
+          lineWidthUnits: 'pixels',
+          getLineWidth: 0.7,
+          lineWidthMinPixels: 0.6,
+          pickable: false,
+        }),
+      )
+      // Highlight the FIRs the focused flight overflies.
+      const focusEntry = focusedId ? manifest.find((m) => m.id === focusedId) : undefined
+      if (focusEntry && focusEntry.firs.length > 0) {
+        const codes = new Set(focusEntry.firs.map((f) => f.code))
+        const features = firBoundaries.features.filter((f) => codes.has((f.properties?.id as string) ?? ''))
+        layers.push(
+          new GeoJsonLayer<Feature>({
+            id: 'fir-highlight',
+            data: { type: 'FeatureCollection', features },
+            stroked: true,
+            filled: true,
+            getFillColor: [255, 0, 200, 20],
+            getLineColor: [255, 122, 224, 150],
+            lineWidthUnits: 'pixels',
+            getLineWidth: 1.2,
+            lineWidthMinPixels: 1,
+            pickable: false,
+          }),
+        )
+      }
+    }
 
     // `magentaCodes` are the airport pins drawn magenta; `visibleCodes` (null = all) filters pins.
     let magentaCodes = new Set<string>()
@@ -251,7 +290,7 @@ export function Map2D() {
     )
 
     overlayRef.current.setProps({ layers })
-  }, [selectedIds, tracks, timeCursor, focusedId, selectedAirport, airports, manifest])
+  }, [selectedIds, tracks, timeCursor, focusedId, selectedAirport, airports, manifest, firBoundaries])
 
   return <div ref={containerRef} style={{ position: 'absolute', inset: 0 }} />
 }

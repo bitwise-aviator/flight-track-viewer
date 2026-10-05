@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { DOMParser } from '@xmldom/xmldom'
-import type { IngestSummary, ManifestEntry, RunwayStatus, TrackFeature } from '../src/types/track'
+import type { FirRef, IngestSummary, ManifestEntry, RunwayStatus, TrackFeature } from '../src/types/track'
 import { ensureCsv, parseAirports, writeAirportsFile, type AirportInfo } from './airports'
 import {
   detectArrivalRunway,
@@ -11,11 +11,13 @@ import {
   type DetectPoint,
   type Runway,
 } from './runways'
+import { loadFirs, overflownFirs, writeFirsFile, type FirData } from './firs'
 
-/** Preloaded reference data for runway detection, shared across all tracks in one ingest run. */
+/** Preloaded reference data for detection, shared across all tracks in one ingest run. */
 interface RunwayContext {
   airportLookup: Map<string, AirportInfo>
   runwaysByIcao: Map<string, Runway[]>
+  firData: FirData | null
 }
 
 /** Per-flight manual runway overrides, persisted so they survive a full re-ingest. */
@@ -252,6 +254,7 @@ function parseFile(
   let departureRunwayStatus: RunwayStatus = 'unknown'
   let arrivalRunway: string | null = null
   let arrivalRunwayStatus: RunwayStatus = 'unknown'
+  let firs: FirRef[] = []
   if (ctx) {
     const detectPts: DetectPoint[] = points.map((p) => ({
       lat: p.coord[1],
@@ -268,6 +271,7 @@ function parseFile(
     departureRunwayStatus = dep.status
     arrivalRunway = arr.runway
     arrivalRunwayStatus = arr.status
+    if (ctx.firData) firs = overflownFirs(detectPts, ctx.firData.index)
   }
 
   unwrapAntimeridian(points)
@@ -309,6 +313,7 @@ function parseFile(
     departureRunwayStatus,
     arrivalRunway,
     arrivalRunwayStatus,
+    firs,
   }
 
   return { manifest, track }
@@ -379,7 +384,9 @@ export async function ingestNewTracks(root: string, options: IngestOptions = {})
   const airportsCsv = await ensureCsv(root, 'airports.csv')
   const airportLookup = airportsCsv ? parseAirports(airportsCsv) : new Map<string, AirportInfo>()
   const runwaysByIcao = await loadRunways(root)
-  const ctx: RunwayContext = { airportLookup, runwaysByIcao }
+  const firData = await loadFirs(root)
+  if (firData) writeFirsFile(root, firData)
+  const ctx: RunwayContext = { airportLookup, runwaysByIcao, firData }
 
   const kmlFiles = readdirSync(rawDir)
     .filter((f) => f.toLowerCase().endsWith('.kml'))

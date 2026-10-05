@@ -44,15 +44,15 @@ export function parseCsvLine(line: string): string[] {
 
 /** Fetches an OurAirports CSV by filename, caching it under data/cache and only re-downloading
  * when the cached copy is older than one AIRAC cycle. Falls back to a stale cache on network error. */
-export async function ensureCsv(root: string, file: string): Promise<string | null> {
+export async function ensureCached(root: string, cacheName: string, url: string): Promise<string | null> {
   const cacheDir = path.join(root, 'data', 'cache')
-  const cacheFile = path.join(cacheDir, `ourairports-${file}`)
+  const cacheFile = path.join(cacheDir, cacheName)
   mkdirSync(cacheDir, { recursive: true })
 
   const fresh = existsSync(cacheFile) && Date.now() - statSync(cacheFile).mtimeMs < CACHE_MAX_AGE_MS
   if (!fresh) {
     try {
-      const res = await fetch(OURAIRPORTS_BASE + file)
+      const res = await fetch(url)
       if (res.ok) {
         const text = await res.text()
         writeFileSync(cacheFile, text)
@@ -63,6 +63,10 @@ export async function ensureCsv(root: string, file: string): Promise<string | nu
     }
   }
   return existsSync(cacheFile) ? readFileSync(cacheFile, 'utf-8') : null
+}
+
+export function ensureCsv(root: string, file: string): Promise<string | null> {
+  return ensureCached(root, `ourairports-${file}`, OURAIRPORTS_BASE + file)
 }
 
 /** Builds an IATA-code -> airport-info lookup from the OurAirports airports CSV. */

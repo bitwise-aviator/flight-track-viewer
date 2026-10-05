@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import type { FeatureCollection } from 'geojson'
 import type { Airport, BasemapMode, ManifestEntry, TrackFeature, ViewMode } from '../types/track'
 
 interface VizState {
@@ -6,6 +7,8 @@ interface VizState {
   tracks: Record<string, TrackFeature>
   selectedIds: string[]
   airports: Airport[]
+  /** FIR boundary polygons (GeoJSON) for the map layer, or null until loaded. */
+  firBoundaries: FeatureCollection | null
   /** The single flight the user has clicked to inspect; drives the detail panel + map focus.
    * Mutually exclusive with `selectedAirport`. */
   focusedId: string | null
@@ -28,6 +31,8 @@ interface VizState {
   loadManifest: () => Promise<void>
   /** Fetches the airport list (referenced origins/destinations) for the map pins. */
   loadAirports: () => Promise<void>
+  /** Fetches the FIR boundary polygons for the map (once). */
+  loadFirBoundaries: () => Promise<void>
   setTrack: (id: string, track: TrackFeature) => void
   /** Fetches a track's GeoJSON if not already loaded. */
   loadTrack: (id: string) => Promise<void>
@@ -74,6 +79,7 @@ export const useVizStore = create<VizState>((set, get) => ({
   tracks: {},
   selectedIds: [],
   airports: [],
+  firBoundaries: null,
   focusedId: null,
   selectedAirport: null,
 
@@ -100,6 +106,12 @@ export const useVizStore = create<VizState>((set, get) => ({
       return
     }
     set({ airports: (await res.json()) as Airport[] })
+  },
+  loadFirBoundaries: async () => {
+    if (get().firBoundaries) return
+    const res = await fetch(`${import.meta.env.BASE_URL}fir-boundaries.geojson`)
+    if (!res.ok) return
+    set({ firBoundaries: (await res.json()) as FeatureCollection })
   },
   setTrack: (id, track) => set((s) => ({ tracks: { ...s.tracks, [id]: track } })),
   loadTrack: async (id) => {
