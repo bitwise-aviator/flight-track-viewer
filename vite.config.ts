@@ -72,4 +72,20 @@ function dataApiPlugin(): Plugin {
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react(), cesium(), dataApiPlugin()],
+  // Pre-bundle the heavy libraries that are only reached via the lazy-loaded 2D/3D views, so a
+  // mid-session dependency change can't leave their optimized chunks stale (the "Outdated Optimize
+  // Dep" 504 that otherwise appears the first time a view is opened after adding a dependency).
+  optimizeDeps: {
+    include: [
+      'cesium',
+      'resium',
+      'maplibre-gl',
+      '@deck.gl/core',
+      '@deck.gl/layers',
+      '@deck.gl/mapbox',
+      '@deck.gl/aggregation-layers',
+      'chart.js',
+      'react-chartjs-2',
+    ],
+  },
 })
